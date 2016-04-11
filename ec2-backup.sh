@@ -28,7 +28,7 @@ export SSHFLAG="1"
 export KEYNAME="ec2-backup-key"
 export INSTANCE_ADDRESS
 export origin_dir
-export EC2_BACKUP_FLAGS_SSH="-i ec2-backup.pem"
+export EC2_BACKUP_FLAGS_SSH
 export DIR="/MyBackUp"
 export backupDir="/ec2-back-up"
 
@@ -109,7 +109,7 @@ back_up_dd()
             return 2
         fi
     done
-    echo "back-dd"
+    echo "back-dd completed"
 }
 
 back_up_rsync()
@@ -131,7 +131,7 @@ back_up_rsync()
     done
     ssh -t -q -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@${INSTANCE_ADDRESS} "sudo mkdir $DIR/$time/"
     ssh -t -q -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@${INSTANCE_ADDRESS} "sudo mv /home/ubuntu$backupDir/* $DIR/$time/"
-    echo "back-rsync"
+    echo "back-rsync completed"
 }
 
 
