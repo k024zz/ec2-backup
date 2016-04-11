@@ -4,23 +4,23 @@
 METHOD="DD"
 VOLFLAG="0"
 
+# extract command line options with getopt
+while getopts :hm:v: opt
+do
+	case "$opt" in
+	h) echo "output help" ;;
+	m) echo "option m with value $METHOD" ;; 
+	v) echo "option v with value $OPTARG" ;;
+	*) echo "Unknown option: $opt" ;;	
+	esac
+done
+
 # check directory
 DIR=${@:-1}
 if [ ! -d "$DIR" ]; then
 	echo "error: directory $DIR does not exist."
 	exit 127
 fi
-
-# extract command line options with getopt
-while getopts :hm:v: opt
-do
-	case "$opt" in
-	h) echo "output help" ;;
-	m) echo "option m with value $OPTARG" ;; 	 
-	v) echo "option v with value $OPTARG" ;;
-	*) echo "Unknown option: $opt" ;;	
-	esac
-done
 
 # create a new volume
 # get a avaiable zone
@@ -74,8 +74,8 @@ aws ec2 attach-volume --volume-id $VOLID --instance-id $instanceId --device /dev
 sleep 5 
 echo "attached"
 
-instanceIp=`aws ec2 describe-instances --instance-ids $instanceId --query 'Reservations[0].Instances[0].PublicIpAddress' | awk -F'"' '{print($2)}'`
-INSTANCE_ADDRESS=`echo "$pemfile $instanceIp" | awk '{print("-i "$1" ubuntu@"$2)}'`
+INSTANCE_ADDRESS=`aws ec2 describe-instances --instance-ids $instanceId --query 'Reservations[0].Instances[0].PublicIpAddress' | awk -F'"' '{print($2)}'`
+EC2_BACKUP_FLAGS_SSH="-i "$pemfile
 echo $INSTANCE_ADDRESS
 
 # todo
