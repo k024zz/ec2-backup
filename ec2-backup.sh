@@ -26,36 +26,33 @@ clean() {
         fi
         log `aws ec2 delete-security-group --group-name ec2-backup-sg`
         log `aws ec2 detach-volume --volume-id $VOLID`
-        log `aws ec2 terminate-instance --instance-ids instanceId`     
+        log `aws ec2 terminate-instances --instance-ids $instanceId`     
     fi
 }
 
 # init 
-export METHOD="dd"
-export VOLFLAG="0"
-export SSHFLAG="1"
-export KEYNAME="ec2-backup-key"
-export INSTANCE_ADDRESS
-export origin_dir
-export EC2_BACKUP_FLAGS_SSH
-export DIR="/MyBackUp"
-export backupDir="/ec2-back-up"
-export AvailFLAG=0
+METHOD="dd"
+VOLFLAG="0"
+SSHFLAG="1"
+KEYNAME="ec2-backup-key"
+DIR="/MyBackUp"
+backupDir="/ec2-back-up"
+AvailFLAG="0"
 
 check_available()
 {
     count=0
     export availableSpace
     if [ -z $EC2_BACKUP_VERBOSE ];then
-        ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@ {INSTANCE_ADDRESS} "sudo mkfs.ext4 /dev/xvdf;"
+        ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@${INSTANCE_ADDRESS} "sudo mkfs.ext4 /dev/xvdf;"
     fi
     while :
     do
         [ -n "${EC2_BACKUP_VERBOSE}"  ] && echo "make file..." >&2
         sleep 3
-        availableSpace=$(ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@ {INSTANCE_ADDRESS} "df | grep $DIR | awk '{print($4)}'")
+        availableSpace=$(ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@${INSTANCE_ADDRESS} "df | grep $DIR | awk '{print($4)}'")
         if [ availableSpace -gt dirSize ];then
-            AvailFLAG=1
+            AvailFLAG="1"
         fi
         if [ $? -eq 0 ];then
             break
@@ -75,8 +72,8 @@ make_file()
     do
         [ -n "${EC2_BACKUP_VERBOSE}"  ] && echo "make file..." >&2
         sleep 3
-        ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@ {INSTANCE_ADDRESS} "sudo mkfs.ext4 /dev/xvdf;"
-        AvailFLAG=1
+        ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@${INSTANCE_ADDRESS} "sudo mkfs.ext4 /dev/xvdf;"
+        AvailFLAG="1"
         if [ $? -eq 0  ];then
             break
         fi
@@ -209,7 +206,7 @@ if [ -z "$group" ]; then
     #echo "delete back up sg if it exists" 
     #aws ec2 delete-security-group --group-name ec2-backup-sg   
 fi
-groupID=`aws ec2 describe-security-groups --group-name ec2-backup-sg | grep GroupId | awk -F'"' '{print($4)}'` 
+groupID=`aws ec2 describe-security-groups --group-name ec2-backup-sg | grep "GroupId" | awk -F'"' '{print($4)}'` 
 
 
 # check if $EC2_BACKUP_FLAGS_SSH has set up 
@@ -218,7 +215,7 @@ if [ -z "$EC2_BACKUP_FLAGS_SSH" ]; then
     # check if the key pair exist
     key=`aws ec2 describe-key-pairs | grep $KEYNAME`
     if [ -n "$key"  ]; then
-        aws ec2 delete-key-pair --key-name $KEYNAME 
+        info=`aws ec2 delete-key-pair --key-name $KEYNAME` 
     fi
     # if the pem file exists, remove it first
     pemFile="./$KEYNAME.pem"
@@ -248,9 +245,14 @@ fi
 
 
 # create instance
-instanceId=`aws ec2 run-instances --image-id ami-fce3c696 --security-group-ids "$groupID" --count 1 --instance-type t2.micro --key-name $KEYNAME --query 'Instances[0].InstanceId' | awk -F'"' '{print($2)}'`
+if [ -z "$EC2_BACKUP_FLAGS_AWS" ]; then
+    instanceId=`aws ec2 run-instances --image-id ami-fce3c696 --security-group-ids "$groupID" --count 1 --instance-type t2.micro --key-name $KEYNAME --query 'Instances[0].InstanceId' | awk -F'"' '{print($2)}'`
+else
+    instanceId=`aws ec2 run-instances --image-id ami-fce3c696 --security-group-ids "$groupID    " --count 1 $EC2_BACKUP_FLAGS_AWS --key-name $KEYNAME --query 'Instances[0].InstanceId' | awk -F'"' '{print($2)}'`
+fi
+sleep 5
 INSTANCE_ADDRESS=`aws ec2 describe-instances --instance-ids $instanceId --query 'Reservations[0].Instances[0].PublicIpAddress' | awk -F'"' '{print($2)}'`
-sleep 5 
+
 
 # calculate directory size
 dirSize=`du -s $origin_dir | awk '{print($1)}'`
@@ -289,19 +291,19 @@ log "initializing ok"
 
 
 # attach-volume
-`aws ec2 attach-volume --volume-id $VOLID --instance-id $instanceId --device /dev/sdf`
+info=`aws ec2 attach-volume --volume-id $VOLID --instance-id $instanceId --device /dev/sdf`
 sleep 5 
 log "attached"
 
 
 # if use the new volume then make_file
-if [ VOLFLAG -eq 0 ];then
+if [ $VOLFLAG -eq 0 ];then
     make_file
 else
 # if use
     check_available
 fi
-if [ AvailFLAG -eq 0 ];then
+if [ $AvailFLAG -eq 0 ];then
     exit 3
 else
     mount_DIR
@@ -323,6 +325,7 @@ umount_DIR
 
 
 # close instance
+clean
 
 exit 0
 
