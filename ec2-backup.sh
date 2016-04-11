@@ -37,7 +37,7 @@ SSHFLAG="1"
 KEYNAME="ec2-backup-key"
 DIR="/MyBackUp"
 backupDir="/ec2-back-up"
-AvailFLAG=0
+AvailFLAG="0"
 
 check_available()
 {
@@ -52,7 +52,7 @@ check_available()
         sleep 3
         availableSpace=$(ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@ {INSTANCE_ADDRESS} "df | grep $DIR | awk '{print($4)}'")
         if [ availableSpace -gt dirSize ];then
-            AvailFLAG=1
+            AvailFLAG="1"
         fi
         if [ $? -eq 0 ];then
             break
@@ -73,7 +73,7 @@ make_file()
         [ -n "${EC2_BACKUP_VERBOSE}"  ] && echo "make file..." >&2
         sleep 3
         ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@ {INSTANCE_ADDRESS} "sudo mkfs.ext4 /dev/xvdf;"
-        AvailFLAG=1
+        AvailFLAG="1"
         if [ $? -eq 0  ];then
             break
         fi
