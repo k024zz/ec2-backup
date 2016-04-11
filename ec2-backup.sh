@@ -26,7 +26,7 @@ clean() {
         fi
         log `aws ec2 delete-security-group --group-name ec2-backup-sg`
         log `aws ec2 detach-volume --volume-id $VOLID`
-        log `aws ec2 terminate-instance --instance-ids instanceId`     
+        log `aws ec2 terminate-instances --instance-ids $instanceId`     
     fi
 }
 
@@ -206,7 +206,7 @@ if [ -z "$group" ]; then
     #echo "delete back up sg if it exists" 
     #aws ec2 delete-security-group --group-name ec2-backup-sg   
 fi
-groupID=`aws ec2 describe-security-groups --group-name ec2-backup-sg | grep GroupId | awk -F'"' '{print($4)}'` 
+groupID=`aws ec2 describe-security-groups --group-name ec2-backup-sg | grep "GroupId" | awk -F'"' '{print($4)}'` 
 
 
 # check if $EC2_BACKUP_FLAGS_SSH has set up 
@@ -245,9 +245,14 @@ fi
 
 
 # create instance
-instanceId=`aws ec2 run-instances --image-id ami-fce3c696 --security-group-ids "$groupID" --count 1 --instance-type t2.micro --key-name $KEYNAME --query 'Instances[0].InstanceId' | awk -F'"' '{print($2)}'`
+if [ -z "$EC2_BACKUP_FLAGS_AWS" ]; then
+    instanceId=`aws ec2 run-instances --image-id ami-fce3c696 --security-group-ids "$groupID" --count 1 --instance-type t2.micro --key-name $KEYNAME --query 'Instances[0].InstanceId' | awk -F'"' '{print($2)}'`
+else
+    instanceId=`aws ec2 run-instances --image-id ami-fce3c696 --security-group-ids "$groupID    " --count 1 $EC2_BACKUP_FLAGS_AWS --key-name $KEYNAME --query 'Instances[0].InstanceId' | awk -F'"' '{print($2)}'`
+fi
+sleep 5
 INSTANCE_ADDRESS=`aws ec2 describe-instances --instance-ids $instanceId --query 'Reservations[0].Instances[0].PublicIpAddress' | awk -F'"' '{print($2)}'`
-sleep 5 
+
 
 # calculate directory size
 dirSize=`du -s $origin_dir | awk '{print($1)}'`
@@ -286,7 +291,7 @@ log "initializing ok"
 
 
 # attach-volume
-log `aws ec2 attach-volume --volume-id $VOLID --instance-id $instanceId --device /dev/sdf`
+info=`aws ec2 attach-volume --volume-id $VOLID --instance-id $instanceId --device /dev/sdf`
 sleep 5 
 log "attached"
 
