@@ -1,12 +1,23 @@
-#!/bin/sh
+#!/bin/bash
 
 help() {
 	echo "options:"
-	echo "-h		Print a usage statement and exit."
-	echo "-m method	Use the given method to perform the backup.	Valid methods are 'dd' and 'rsync'; default is 'dd'."
+	echo "-h	Print a usage statement and exit."
+	echo "-m method		Use the given method to perform the backup.	Valid methods are 'dd' and 'rsync'; default is 'dd'."
 	echo "-v volume-id  Use the given volume instead of creating a new one."
 }
 
+clean() {
+	# delete key pair
+	key=`aws ec2 describe-key-pairs | grep ec2-backup-key`
+	if [ -n "$key"  ]; then
+		aws ec2 delete-key-pair --key-name ec2-backup-key
+	fi
+	# delete pem file 
+	if [ ! -d "$pemfile" ]; then
+		rm -f $pemfile 
+	fi
+}
 
 # init 
 METHOD="dd"
@@ -16,8 +27,12 @@ VOLFLAG="0"
 while getopts :hm:v: opt
 do
 	case "$opt" in
-	h) echo "output help" ;;
+	h) help ;;
 	m) METHOD=$OPTARG
+	   if [ "$METHOD" != "dd" -a "$METHOD" != "rsync" ]; then
+	       echo "error: invalid method"
+		   exit 127
+	   fi
 	   echo "option m with value $METHOD" ;; 
 	v) VOLFLAG="1"
 	   VOLID=$OPTARG
@@ -31,18 +46,32 @@ shift `expr $OPTIND - 1`
 DIR=$1
 if [ ! -d "$DIR" ]; then
 	echo "error: directory $DIR does not exist."
-	exit 127
+	exit 1
 fi
 
-# create a new volume
-# get a avaiable zone
-avaiZone=`aws ec2 describe-availability-zones --query 'AvailabilityZones[0].ZoneName' | awk -F'"' '{print($2)}'`
+# calculate directory size
 dirSize=`du -s $DIR | awk '{print($1)}'`
 volSize=`echo "$dirSize 524288" | awk '{print($1/$2)}'`
 volSize=`echo volSize | awk '{print int($1)==$1?$1:int(int($1*10/10+1))}'`
-VOLID=`aws ec2 create-volume --size $volSize --availability-zone $avaiZone --volume-type gp2 | grep VolumeId | awk -F'"' '{print($4)}'`
-echo $VOLID
-
+if [ "$VOLFLAG" == "0" ]; then
+	# create a new volume
+	# get a avaiable zone
+	avaiZone=`aws ec2 describe-availability-zones --query 'AvailabilityZones[0].ZoneName' | awk -F'"' '{print($2)}'`
+		VOLID=`aws ec2 create-volume --size $volSize --availability-zone $avaiZone --volume-type gp2 | grep VolumeId | awk -F'"' '{print($4)}'`
+else
+	#check avaiable zone and volume size
+	curZone=`aws ec2 describe-volumes --volume-id $VOLID --query 'Volumes[0].AvailabilityZone'`
+	avaiZone=`aws ec2 describe-availability-zones --query 'AvailabilityZones[0].ZoneName' | grep "$curZone"`
+	if [ -z "$avaiZone" ]; then
+		echo "the avaiable zone of volume does not match you"
+		exit 1
+	fi
+	curSize=`aws ec2 describe-volumes --volume-id $VOLID --query 'Volumes[0].Size'`
+	if [ $volSize -gt $curSize ]; then
+		echo "The size of the volume is not enough"	
+		exit 1
+	fi
+fi	
 # create a new security group for ec2 backup
 # check if the group ec2-backup exist
 group=`aws ec2 describe-security-groups | grep ec2-backup-sg`
@@ -58,11 +87,11 @@ groupID=`aws ec2 describe-security-groups --group-name ec2-backup-sg | grep Grou
 # check if the key pair exist
 key=`aws ec2 describe-key-pairs | grep ec2-backup-key`
 if [ -n "$key"  ]; then
-	#echo "delete key pair if it exists"
 	aws ec2 delete-key-pair --key-name ec2-backup-key
 fi
+
 # if the pem file exists, remove it first
-pemfile="ec2-backup.pem"
+pemfile="./ec2-backup.pem"
 if [ ! -d "$pemfile" ]; then
 	rm -f $pemfile 
 fi
@@ -82,7 +111,7 @@ done
 echo "ok" 
 
 # attach-volume
-aws ec2 attach-volume --volume-id $VOLID --instance-id $instanceId --device /dev/gpf
+aws ec2 attach-volume --volume-id $VOLID --instance-id $instanceId --device /dev/sdf
 sleep 5 
 echo "attached"
 
