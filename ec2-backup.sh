@@ -37,7 +37,7 @@ export SSHFLAG="1"
 export KEYNAME="ec2-backup-key"
 export INSTANCE_ADDRESS
 export origin_dir
-export EC2_BACKUP_FLAGS_SSH
+export EC2_BACKUP_FLAGS_SSH＝""
 export DIR="/MyBackUp"
 export backupDir="/ec2-back-up"
 export AvailFLAG=0
