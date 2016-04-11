@@ -44,13 +44,13 @@ check_available()
     count=0
     export availableSpace
     if [ -z $EC2_BACKUP_VERBOSE ];then
-        ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@ {INSTANCE_ADDRESS} "sudo mkfs.ext4 /dev/xvdf;"
+        ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@${INSTANCE_ADDRESS} "sudo mkfs.ext4 /dev/xvdf;"
     fi
     while :
     do
         [ -n "${EC2_BACKUP_VERBOSE}"  ] && echo "make file..." >&2
         sleep 3
-        availableSpace=$(ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@ {INSTANCE_ADDRESS} "df | grep $DIR | awk '{print($4)}'")
+        availableSpace=$(ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@${INSTANCE_ADDRESS} "df | grep $DIR | awk '{print($4)}'")
         if [ availableSpace -gt dirSize ];then
             AvailFLAG="1"
         fi
@@ -72,7 +72,7 @@ make_file()
     do
         [ -n "${EC2_BACKUP_VERBOSE}"  ] && echo "make file..." >&2
         sleep 3
-        ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@ {INSTANCE_ADDRESS} "sudo mkfs.ext4 /dev/xvdf;"
+        ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@${INSTANCE_ADDRESS} "sudo mkfs.ext4 /dev/xvdf;"
         AvailFLAG="1"
         if [ $? -eq 0  ];then
             break
