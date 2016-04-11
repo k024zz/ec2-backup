@@ -31,16 +31,13 @@ clean() {
 }
 
 # init 
-export METHOD="dd"
-export VOLFLAG="0"
-export SSHFLAG="1"
-export KEYNAME="ec2-backup-key"
-export INSTANCE_ADDRESS
-export origin_dir
-export EC2_BACKUP_FLAGS_SSH
-export DIR="/MyBackUp"
-export backupDir="/ec2-back-up"
-export AvailFLAG=0
+METHOD="dd"
+VOLFLAG="0"
+SSHFLAG="1"
+KEYNAME="ec2-backup-key"
+DIR="/MyBackUp"
+backupDir="/ec2-back-up"
+AvailFLAG=0
 
 check_available()
 {
@@ -218,7 +215,7 @@ if [ -z "$EC2_BACKUP_FLAGS_SSH" ]; then
     # check if the key pair exist
     key=`aws ec2 describe-key-pairs | grep $KEYNAME`
     if [ -n "$key"  ]; then
-        aws ec2 delete-key-pair --key-name $KEYNAME 
+        info=`aws ec2 delete-key-pair --key-name $KEYNAME` 
     fi
     # if the pem file exists, remove it first
     pemFile="./$KEYNAME.pem"
@@ -295,13 +292,13 @@ log "attached"
 
 
 # if use the new volume then make_file
-if [ VOLFLAG -eq 0 ];then
+if [ $VOLFLAG -eq 0 ];then
     make_file
 else
 # if use
     check_available
 fi
-if [ AvailFLAG -eq 0 ];then
+if [ $AvailFLAG -eq 0 ];then
     exit 3
 else
     mount_DIR
