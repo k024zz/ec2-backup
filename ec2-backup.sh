@@ -31,7 +31,32 @@ export origin_dir
 export EC2_BACKUP_FLAGS_SSH
 export DIR="/MyBackUp"
 export backupDir="/ec2-back-up"
-
+export AvailFLAG=0
+check_available()
+{
+    count=0
+    export availableSpace
+    if [ -z $EC2_BACKUP_VERBOSE ];then
+        ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@ {INSTANCE_ADDRESS} "sudo mkfs.ext4 /dev/xvdf;"
+    fi
+    while :
+    do
+        [ -n "${EC2_BACKUP_VERBOSE}"  ] && echo "make file..." >&2
+        sleep 3
+        availableSpace=$(ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@ {INSTANCE_ADDRESS} "df | grep $DIR | awk '{print($4)}'")
+        if [ availableSpace -gt dirSize ];then
+            AvailFLAG=1
+        fi
+        if [ $? -eq 0 ];then
+            break
+        fi
+        count=$(($count+1))
+        if [ $cnt -eq 30  ];then
+            return 2
+        fi
+    done
+    echo "check available completed"
+}
 make_file()
 {
     count=0
@@ -40,6 +65,7 @@ make_file()
         [ -n "${EC2_BACKUP_VERBOSE}"  ] && echo "make file..." >&2
         sleep 3
         ssh -q -t -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@ {INSTANCE_ADDRESS} "sudo mkfs.ext4 /dev/xvdf;"
+        AvailFLAG=1
         if [ $? -eq 0  ];then
             break
         fi
@@ -131,7 +157,7 @@ back_up_rsync()
     done
     ssh -t -q -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@${INSTANCE_ADDRESS} "sudo mkdir $DIR/$time/"
     ssh -t -q -oStrictHostKeyChecking=no $EC2_BACKUP_FLAGS_SSH ubuntu@${INSTANCE_ADDRESS} "sudo mv /home/ubuntu$backupDir/* $DIR/$time/"
-    echo "back-rsync completed"
+    echo "back-rsync completedï"
 }
 
 
@@ -256,12 +282,35 @@ echo "initializing ok"
 aws ec2 attach-volume --volume-id $VOLID --instance-id $instanceId --device /dev/sdf
 sleep 5 
 echo "attached"
+# if use the new volume then make_file
+if [ VOLFLAG -eq 0 ];then
+    make_file
+else
+# if use
+    check_available
+fi
+if [ AvailFLAG -eq 0 ];then
+    exit 3
+else
+    mount_DIR
+fi
+if !([ $METHOD == "dd" ] || [ $METHOD == "rsync" ])
+then
+    echo "ERROR: Illegal method"
+    echo "Valid methods are 'dd' and 'rsync'; default is 'dd'."
+usage
+exit 1
+fi
 
-make_file
-mount_DIR
-back_up_dd
-back_up_rsync
+if [ $METHOD == "dd" ];then
+    back_up_dd
+else
+    back_up_rsync
+fi
 umount_DIR
+
+
+# close instance
 
 exit 0
 
