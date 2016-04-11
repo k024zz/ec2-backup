@@ -26,7 +26,7 @@ clean() {
         fi
         log `aws ec2 delete-security-group --group-name ec2-backup-sg`
         log `aws ec2 detach-volume --volume-id $VOLID`
-        log     
+        log `aws ec2 terminate-instance --instance-ids instanceId`     
     fi
 }
 
@@ -204,8 +204,8 @@ fi
 # check if the group ec2-backup exists
 group=`aws ec2 describe-security-groups | grep ec2-backup-sg`
 if [ -z "$group" ]; then 
-    aws ec2 create-security-group --group-name ec2-backup-sg --description "ec2 backup group"
-    aws ec2 authorize-security-group-ingress --group-name ec2-backup-sg --protocol -1 --cidr 0.0.0.0/0
+    log `aws ec2 create-security-group --group-name ec2-backup-sg --description "ec2 backup group"`
+    log `aws ec2 authorize-security-group-ingress --group-name ec2-backup-sg --protocol -1 --cidr 0.0.0.0/0`
     #echo "delete back up sg if it exists" 
     #aws ec2 delete-security-group --group-name ec2-backup-sg   
 fi
@@ -246,7 +246,6 @@ else
     fi
 fi
 
-exit 0
 
 # create instance
 instanceId=`aws ec2 run-instances --image-id ami-fce3c696 --security-group-ids "$groupID" --count 1 --instance-type t2.micro --key-name $KEYNAME --query 'Instances[0].InstanceId' | awk -F'"' '{print($2)}'`
