@@ -8,20 +8,24 @@ help() {
 }
 
 clean() {
-	# delete key pair
-	key=`aws ec2 describe-key-pairs | grep ec2-backup-key`
-	if [ -n "$key"  ]; then
-		aws ec2 delete-key-pair --key-name ec2-backup-key
-	fi
-	# delete pem file 
-	if [ ! -d "$pemfile" ]; then
-		rm -f $pemfile 
+	if [ "$SSHFLAG" == "0" ]; then
+		# delete key pair
+		key=`aws ec2 describe-key-pairs | grep ec2-backup-key`
+		if [ -n "$key"  ]; then
+			aws ec2 delete-key-pair --key-name ec2-backup-key
+		fi
+		# delete pem file 
+		if [ -d "$pemfile" ]; then
+			rm -f $pemfile 
+		fi
 	fi
 }
 
 # init 
 METHOD="dd"
 VOLFLAG="0"
+SSHFLAG="1"
+KEYNAME="ec2-backup-key"
 
 # extract command line options with getopt
 while getopts :hm:v: opt
@@ -42,38 +46,17 @@ do
 done
 shift `expr $OPTIND - 1`
 
+
 # check directory
-DIR=$1
-if [ ! -d "$DIR" ]; then
-	echo "error: directory $DIR does not exist."
+origin_dir=$1
+if [ ! -d "$origin_dir" ]; then
+	echo "error: directory $origin_dir does not exist."
 	exit 1
 fi
+	
 
-# calculate directory size
-dirSize=`du -s $DIR | awk '{print($1)}'`
-volSize=`echo "$dirSize 524288" | awk '{print($1/$2)}'`
-volSize=`echo volSize | awk '{print int($1)==$1?$1:int(int($1*10/10+1))}'`
-if [ "$VOLFLAG" == "0" ]; then
-	# create a new volume
-	# get a avaiable zone
-	avaiZone=`aws ec2 describe-availability-zones --query 'AvailabilityZones[0].ZoneName' | awk -F'"' '{print($2)}'`
-		VOLID=`aws ec2 create-volume --size $volSize --availability-zone $avaiZone --volume-type gp2 | grep VolumeId | awk -F'"' '{print($4)}'`
-else
-	#check avaiable zone and volume size
-	curZone=`aws ec2 describe-volumes --volume-id $VOLID --query 'Volumes[0].AvailabilityZone'`
-	avaiZone=`aws ec2 describe-availability-zones --query 'AvailabilityZones[0].ZoneName' | grep "$curZone"`
-	if [ -z "$avaiZone" ]; then
-		echo "the avaiable zone of volume does not match you"
-		exit 1
-	fi
-	curSize=`aws ec2 describe-volumes --volume-id $VOLID --query 'Volumes[0].Size'`
-	if [ $volSize -gt $curSize ]; then
-		echo "The size of the volume is not enough"	
-		exit 1
-	fi
-fi	
 # create a new security group for ec2 backup
-# check if the group ec2-backup exist
+# check if the group ec2-backup exists
 group=`aws ec2 describe-security-groups | grep ec2-backup-sg`
 if [ -z "$group" ]; then 
 	aws ec2 create-security-group --group-name ec2-backup-sg --description "ec2 backup group"
@@ -83,24 +66,74 @@ if [ -z "$group" ]; then
 fi
 groupID=`aws ec2 describe-security-groups --group-name ec2-backup-sg | grep GroupId | awk -F'"' '{print($4)}'` 
 
-# create a new key for ec2 backup
-# check if the key pair exist
-key=`aws ec2 describe-key-pairs | grep ec2-backup-key`
-if [ -n "$key"  ]; then
-	aws ec2 delete-key-pair --key-name ec2-backup-key
+
+# check if $EC2_BACKUP_FLAGS_SSH has set up 
+if [ -z "$EC2_BACKUP_FLAGS_SSH" ]; then
+	# create a new key for ec2 backup
+	# check if the key pair exist
+	key=`aws ec2 describe-key-pairs | grep $KEYNAME`
+	if [ -n "$key"  ]; then
+		aws ec2 delete-key-pair --key-name $KEYNAME 
+	fi
+	# if the pem file exists, remove it first
+	pemFile="./$KEYNAME.pem"
+	if [ ! -d "$pemFile" ]; then
+		rm -f $pemFile 
+	fi
+	aws ec2 create-key-pair --key-name $KEYNAME --query 'KeyMaterial' --output text > $pemFile
+	chmod 400 $pemFile
+	SSHFLAG="0"
+	EC2_BACKUP_FLAGS_SSH="-i "$pemFile
+else
+	#check if the pem file exist
+	pemFile=`echo $EC2_BACKUP_FLAGS_SSH | awk '{print($2)}'`
+	if [ -d "$pemFile" ]; then
+		echo "error: pem file does not exist"	
+		exit 1
+	fi
+	#get fingerprint from private key and find the name of the fingerprint
+	fingerprint=`ec2-fingerprint-key $pemFile`
+	KEYNAME=`aws ec2 describe-key-pairs | grep $fingerprint -B 1 | awk -F'"' '{print($4)}'`
+	KEYNAME=`echo $KEYNAME | awk '{print($1)}'` 
+	if [ -n "$KEYNAME" ]; then
+		echo "error: the key pair does not exist"
+		exit 1
+	fi
 fi
 
-# if the pem file exists, remove it first
-pemfile="./ec2-backup.pem"
-if [ ! -d "$pemfile" ]; then
-	rm -f $pemfile 
-fi
-aws ec2 create-key-pair --key-name ec2-backup-key --query 'KeyMaterial' --output text > $pemfile
-chmod 400 $pemfile
 
 # create instance
-instanceId=`aws ec2 run-instances --image-id ami-fce3c696 --security-group-ids "$groupID" --count 1 --instance-type t2.micro --key-name ec2-backup-key --query 'Instances[0].InstanceId' | awk -F'"' '{print($2)}'`
+instanceId=`aws ec2 run-instances --image-id ami-fce3c696 --security-group-ids "$groupID" --count 1 --instance-type t2.micro --key-name $KEYNAME --query 'Instances[0].InstanceId' | awk -F'"' '{print($2)}'`
 echo $instanceId
+INSTANCE_ADDRESS=`aws ec2 describe-instances --instance-ids $instanceId --query 'Reservations[0].Instances[0].PublicIpAddress' | awk -F'"' '{print($2)}'`
+echo $INSTANCE_ADDRESS
+
+
+# calculate directory size
+dirSize=`du -s $origin_dir | awk '{print($1)}'`
+volSize=`echo "$dirSize 524288" | awk '{print($1/$2)}'`
+volSize=`echo volSize | awk '{print int($1)==$1?$1:int(int($1*10/10+1))}'`
+avaiZone=`aws ec2 describe-instances --instance-ids $instanceId --query 'Reservations[0].Instances[0].Placement.AvailabilityZone'`
+if [ "$VOLFLAG" == "0" ]; then
+	# create a new volume
+	avaiZone=`echo $avaiZone | awk -F'"' '{print($2)}'`
+	VOLID=`aws ec2 create-volume --size $volSize --availability-zone $avaiZone --volume-type gp2 | grep VolumeId | awk -F'"' '{print($4)}'`
+else
+	#check avaiable zone and volume size
+	curZone=`aws ec2 describe-volumes --volume-id $VOLID --query 'Volumes[0].AvailabilityZone'`
+	if [ "$avaiZone" != "$curZone" ]; then
+		echo "the avaiable zone of volume does not match you"
+		exit 1
+	fi
+	curSize=`aws ec2 describe-volumes --volume-id $VOLID --query 'Volumes[0].Size'`
+	if [ $volSize -gt $curSize ]; then
+		echo "The size of the volume is not enough"	
+		exit 1
+	fi
+fi
+
+
+# wait for instance initializing
 status=""
 while [ "$status" != '"ok"' ]
 do
@@ -108,19 +141,13 @@ do
 	status=`aws ec2 describe-instance-status --instance-ids $instanceId --query 'InstanceStatuses[0].InstanceStatus.Status'`
 	sleep 15
 done	
-echo "ok" 
+echo "initializing ok" 
+
 
 # attach-volume
 aws ec2 attach-volume --volume-id $VOLID --instance-id $instanceId --device /dev/sdf
 sleep 5 
 echo "attached"
-
-INSTANCE_ADDRESS=`aws ec2 describe-instances --instance-ids $instanceId --query 'Reservations[0].Instances[0].PublicIpAddress' | awk -F'"' '{print($2)}'`
-EC2_BACKUP_FLAGS_SSH="-i "$pemfile
-echo $INSTANCE_ADDRESS
-
-# todo
-
 
 
 exit 0
