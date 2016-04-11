@@ -7,6 +7,12 @@ help() {
 	echo "-v volume-id  Use the given volume instead of creating a new one."
 }
 
+log() {
+	if [ -n "$EC2_BACKUP_VERBOSE" ]; then
+		echo $1
+	fi
+}
+
 clean() {
 	if [ "$SSHFLAG" == "0" ]; then
 		# delete key pair
@@ -18,6 +24,9 @@ clean() {
 		if [ -d "$pemfile" ]; then
 			rm -f $pemfile 
 		fi
+		log `aws ec2 delete-security-group --group-name ec2-backup-sg`
+		log `aws ec2 detach-volume --volume-id $VOLID`
+	    log 	
 	fi
 }
 
@@ -36,11 +45,9 @@ do
 	   if [ "$METHOD" != "dd" -a "$METHOD" != "rsync" ]; then
 	       echo "error: invalid method"
 		   exit 127
-	   fi
-	   echo "option m with value $METHOD" ;; 
+	   fi;;
 	v) VOLFLAG="1"
-	   VOLID=$OPTARG
-	   echo "option v with value $VOLID" ;;
+	   VOLID=$OPTARG ;;
 	*) echo "Unknown option: $opt" ;;	
 	esac
 done
@@ -95,19 +102,18 @@ else
 	fingerprint=`ec2-fingerprint-key $pemFile`
 	KEYNAME=`aws ec2 describe-key-pairs | grep $fingerprint -B 1 | awk -F'"' '{print($4)}'`
 	KEYNAME=`echo $KEYNAME | awk '{print($1)}'` 
-	if [ -n "$KEYNAME" ]; then
+	if [ -z "$KEYNAME" ]; then
 		echo "error: the key pair does not exist"
 		exit 1
 	fi
 fi
 
+exit 0
 
 # create instance
 instanceId=`aws ec2 run-instances --image-id ami-fce3c696 --security-group-ids "$groupID" --count 1 --instance-type t2.micro --key-name $KEYNAME --query 'Instances[0].InstanceId' | awk -F'"' '{print($2)}'`
-echo $instanceId
 INSTANCE_ADDRESS=`aws ec2 describe-instances --instance-ids $instanceId --query 'Reservations[0].Instances[0].PublicIpAddress' | awk -F'"' '{print($2)}'`
-echo $INSTANCE_ADDRESS
-
+sleep 5 
 
 # calculate directory size
 dirSize=`du -s $origin_dir | awk '{print($1)}'`
@@ -118,6 +124,7 @@ if [ "$VOLFLAG" == "0" ]; then
 	# create a new volume
 	avaiZone=`echo $avaiZone | awk -F'"' '{print($2)}'`
 	VOLID=`aws ec2 create-volume --size $volSize --availability-zone $avaiZone --volume-type gp2 | grep VolumeId | awk -F'"' '{print($4)}'`
+	echo $VOLID
 else
 	#check avaiable zone and volume size
 	curZone=`aws ec2 describe-volumes --volume-id $VOLID --query 'Volumes[0].AvailabilityZone'`
@@ -137,17 +144,17 @@ fi
 status=""
 while [ "$status" != '"ok"' ]
 do
-	echo "wait for instance initializing. status: $status"
+	log "wait for instance initializing. status: $status"
 	status=`aws ec2 describe-instance-status --instance-ids $instanceId --query 'InstanceStatuses[0].InstanceStatus.Status'`
 	sleep 15
 done	
-echo "initializing ok" 
+log "initializing ok" 
 
 
 # attach-volume
-aws ec2 attach-volume --volume-id $VOLID --instance-id $instanceId --device /dev/sdf
+`aws ec2 attach-volume --volume-id $VOLID --instance-id $instanceId --device /dev/sdf`
 sleep 5 
-echo "attached"
+log "attached"
 
 
 exit 0
