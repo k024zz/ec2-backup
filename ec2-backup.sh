@@ -1,7 +1,15 @@
 #!/bin/sh
 
+help() {
+	echo "options:"
+	echo "-h		Print a usage statement and exit."
+	echo "-m method	Use the given method to perform the backup.	Valid methods are 'dd' and 'rsync'; default is 'dd'."
+	echo "-v volume-id  Use the given volume instead of creating a new one."
+}
+
+
 # init 
-METHOD="DD"
+METHOD="dd"
 VOLFLAG="0"
 
 # extract command line options with getopt
@@ -9,14 +17,18 @@ while getopts :hm:v: opt
 do
 	case "$opt" in
 	h) echo "output help" ;;
-	m) echo "option m with value $METHOD" ;; 
-	v) echo "option v with value $OPTARG" ;;
+	m) METHOD=$OPTARG
+	   echo "option m with value $METHOD" ;; 
+	v) VOLFLAG="1"
+	   VOLID=$OPTARG
+	   echo "option v with value $VOLID" ;;
 	*) echo "Unknown option: $opt" ;;	
 	esac
 done
+shift `expr $OPTIND - 1`
 
 # check directory
-DIR=${@:-1}
+DIR=$1
 if [ ! -d "$DIR" ]; then
 	echo "error: directory $DIR does not exist."
 	exit 127
@@ -28,7 +40,7 @@ avaiZone=`aws ec2 describe-availability-zones --query 'AvailabilityZones[0].Zone
 dirSize=`du -s $DIR | awk '{print($1)}'`
 volSize=`echo "$dirSize 524288" | awk '{print($1/$2)}'`
 volSize=`echo volSize | awk '{print int($1)==$1?$1:int(int($1*10/10+1))}'`
-VOLID=`aws ec2 create-volume --size $volSize --availability-zone $avaiZone --volume-type standard | grep VolumeId | awk -F'"' '{print($4)}'`
+VOLID=`aws ec2 create-volume --size $volSize --availability-zone $avaiZone --volume-type gp2 | grep VolumeId | awk -F'"' '{print($4)}'`
 echo $VOLID
 
 # create a new security group for ec2 backup
@@ -70,7 +82,7 @@ done
 echo "ok" 
 
 # attach-volume
-aws ec2 attach-volume --volume-id $VOLID --instance-id $instanceId --device /dev/sdp
+aws ec2 attach-volume --volume-id $VOLID --instance-id $instanceId --device /dev/gpf
 sleep 5 
 echo "attached"
 
