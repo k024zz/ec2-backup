@@ -289,7 +289,7 @@ log "initializing ok"
 
 
 # attach-volume
-`aws ec2 attach-volume --volume-id $VOLID --instance-id $instanceId --device /dev/sdf`
+log `aws ec2 attach-volume --volume-id $VOLID --instance-id $instanceId --device /dev/sdf`
 sleep 5 
 log "attached"
 
@@ -323,6 +323,7 @@ umount_DIR
 
 
 # close instance
+clean
 
 exit 0
 
